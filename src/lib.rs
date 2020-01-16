@@ -146,7 +146,7 @@ use std::task::Poll;
 pub struct Command {
     std: StdCommand,
     kill_on_drop: bool,
-    pty: Option<imp::Pty>
+    pty_cfg: imp::PtyCfg,
 }
 
 pub(crate) struct SpawnedChild {
@@ -389,6 +389,7 @@ impl Command {
     /// ```
     pub fn stdin<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
         self.std.stdin(cfg);
+        self.pty_cfg.stdin = false;
         self
     }
 
@@ -413,6 +414,7 @@ impl Command {
     /// ```
     pub fn stdout<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
         self.std.stdout(cfg);
+        self.pty_cfg.stdout = false;
         self
     }
 
@@ -437,8 +439,56 @@ impl Command {
     /// ```
     pub fn stderr<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
         self.std.stderr(cfg);
+        self.pty_cfg.stderr = false;
         self
     }
+
+    /// Create a pseudo-terminal for the child.
+    ///
+    /// On `spawn()`, a pseudo-terminal is created, and the childs
+    /// stdin/stdout/stderr handles are connected to the slave side
+    /// of the pty. The stdin/stdout/stderr methods of the returned
+    /// `Child` struct all refer to the master side of the pty.
+    ///
+    /// If `new_session` is set, the child will be spawned in a new
+    /// session, and the pty will become the controlling terminal
+    /// of that session.
+    ///
+    /// The values `rows` and `cols` set the terminal size of the
+    /// pty. If one of them is zero, the size will not be set.
+    ///
+    /// When this is called, all earlier configurations of
+    /// `stdin`, `stdout` and `stderr` are removed.
+    ///
+    /// If you call `stdin()`, `stdout()` or `stderr()` after
+    /// this call, the configuration for that handle will be
+    /// overridden again.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```no_run
+    /// use tokio_process_pty::Command;;
+    /// use std::process::{Stdio};
+    ///
+    /// let command = Command::new("ls")
+    ///         .pty(false, 0, 0)
+    ///         .stderr(Stdio::null());
+    /// ```
+    #[cfg(unix)]
+    pub fn pty(&mut self, new_session: bool, rows: u16, cols: u16) -> &mut Command {
+        self.pty_cfg = imp::PtyCfg {
+            new_session,
+            rows,
+            cols,
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        };
+        self
+    }
+
 
     /// Controls whether a `kill` operation should be invoked on a spawned child
     /// process when its corresponding `Child` handle is dropped.
@@ -556,7 +606,7 @@ impl Command {
     /// }
     /// ```
     pub fn spawn(&mut self) -> io::Result<Child> {
-        imp::spawn_child(&mut self.std).map(|spawned_child| Child {
+        imp::spawn_child(self).map(|spawned_child| Child {
             child: ChildDropGuard {
                 inner: spawned_child.child,
                 kill_on_drop: self.kill_on_drop,
@@ -653,6 +703,8 @@ impl Command {
     pub fn output(&mut self) -> impl Future<Output = io::Result<Output>> {
         self.std.stdout(Stdio::piped());
         self.std.stderr(Stdio::piped());
+        self.pty_cfg.stdin = false;
+        self.pty_cfg.stdout = false;
 
         let child = self.spawn();
 
@@ -665,8 +717,7 @@ impl From<StdCommand> for Command {
         Command {
             std,
             kill_on_drop: false,
-            #[cfg(unix)]
-            pty: None,
+            pty_cfg: imp::PtyCfg::new(),
         }
     }
 }

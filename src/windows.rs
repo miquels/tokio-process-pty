@@ -65,8 +65,8 @@ struct Waiting {
 unsafe impl Sync for Waiting {}
 unsafe impl Send for Waiting {}
 
-pub(crate) fn spawn_child(cmd: &mut StdCommand) -> io::Result<SpawnedChild> {
-    let mut child = cmd.spawn()?;
+pub(crate) fn spawn_child(cmd: &mut crate::cmd) -> io::Result<SpawnedChild> {
+    let mut child = cmd.std.spawn()?;
     let stdin = stdio(child.stdin.take());
     let stdout = stdio(child.stdout.take());
     let stderr = stdio(child.stderr.take());
@@ -191,9 +191,19 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct Pty {
+pub(crate) struct PtyCfg {
     stdin:  bool,
     stdout: bool,
     stderr: bool,
+}
+
+impl PtyCfg {
+    pub fn new() -> PtyCfg {
+        PtyCfg {
+            stdin: false,
+            stdout: false,
+            stderr: false,
+        }
+    }
 }
 

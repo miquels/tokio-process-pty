@@ -25,7 +25,8 @@ mod orphan;
 use orphan::{OrphanQueue, OrphanQueueImpl, Wait};
 
 mod pty;
-pub(crate) use pty::Pty;
+use pty::Pty;
+pub(crate) use pty::PtyCfg;
 
 mod reap;
 use reap::Reaper;
@@ -99,11 +100,32 @@ impl fmt::Debug for Child {
     }
 }
 
-pub(crate) fn spawn_child(cmd: &mut std::process::Command) -> io::Result<SpawnedChild> {
-    let mut child = cmd.spawn()?;
-    let stdin = stdio(child.stdin.take())?;
-    let stdout = stdio(child.stdout.take())?;
-    let stderr = stdio(child.stderr.take())?;
+pub(crate) fn spawn_child(cmd: &mut crate::Command) -> io::Result<SpawnedChild> {
+    let pty = if cmd.pty_cfg.enabled() {
+        let mut pty = Pty::open(cmd)?;
+        pty.setup_slave_stdio(cmd)?;
+        Some(pty)
+    } else {
+        None
+    };
+
+    let mut child = cmd.std.spawn()?;
+    let mut stdin = stdio(child.stdin.take())?;
+    let mut stdout = stdio(child.stdout.take())?;
+    let mut stderr = stdio(child.stderr.take())?;
+
+    // Connect stdin / stdout / stderr to the pty master.
+    if let Some(mut pty) = pty {
+        if cmd.pty_cfg.stdin {
+            stdin = stdio(Some(pty.master_stdio()?))?;
+        }
+        if cmd.pty_cfg.stdout {
+            stdout = stdio(Some(pty.master_stdio()?))?;
+        }
+        if cmd.pty_cfg.stderr {
+            stderr = stdio(Some(pty.master_stdio()?))?;
+        }
+    }
 
     let signal = signal(SignalKind::child())?;
 

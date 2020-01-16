@@ -1,42 +1,75 @@
+use std::default::Default;
 use std::io;
-use std::os::unix::io::{RawFd, AsRawFd};
+use std::os::unix::io::{RawFd, AsRawFd, FromRawFd};
 use std::process::Stdio;
 
-use nix::fcntl::{open, fcntl, FcntlArg, OFlag};
+use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use nix::pty::{openpty, OpenptyResult, Winsize};
 use nix::sys::termios::{tcgetattr, tcsetattr, cfmakeraw};
 use nix::sys::termios::SpecialCharacterIndices::*;
 use nix::sys::termios::{ControlFlags, InputFlags, OutputFlags, LocalFlags, SetArg};
 use nix::sys::termios::Termios;
-use nix::sys::stat::Mode;
-use nix::unistd::{dup2, setsid, close};
+use nix::unistd::{dup, close};
 
-#[derive(Debug)]
-pub(crate) struct Pty {
-    pub master: RawFd,
-    pub slave:  RawFd,
+#[derive(Debug, Default)]
+pub(crate) struct PtyCfg {
+    pub new_session: bool,
+    pub rows: u16,
+    pub cols: u16,
     pub stdin:  bool,
     pub stdout: bool,
     pub stderr: bool,
 }
 
+impl PtyCfg {
+    pub fn new() -> PtyCfg {
+        PtyCfg::default()
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.stdin || self.stdout || self.stderr
+    }
+}
+
+pub(crate) struct MasterFd(RawFd);
+
+impl AsRawFd for MasterFd {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Pty {
+    pub master: RawFd,
+    pub slave: RawFd,
+    pub slave_dups: Vec<RawFd>,
+}
+
+impl Drop for Pty {
+    fn drop(&mut self) {
+        let _ = close(self.master);
+        let _ = close(self.slave);
+        for fd in self.slave_dups.drain(..) {
+            let _ = close(fd);
+        }
+    }
+}
+
 impl Pty {
     // Open a pseudo tty master/slave pair. set slave to defaults, and master to non-blocking.
-    pub(crate) fn open(rows: u16, cols: u16) -> io::Result<Pty> {
+    pub(crate) fn open(this: &mut crate::Command) -> io::Result<Pty> {
 
         // open a pty master/slave set
-        let winsize = if rows > 0 && cols > 0 {
-            Some(Winsize{ ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 })
+        let winsize = if this.pty_cfg.rows > 0 && this.pty_cfg.cols > 0 {
+            Some(Winsize{ ws_row: this.pty_cfg.rows, ws_col: this.pty_cfg.cols, ws_xpixel: 0, ws_ypixel: 0 })
         } else {
             None
         };
         let OpenptyResult{ master, slave } = openpty(winsize.as_ref(), None).map_err(to_io_error)?;
 
         // set master to non-blocking.
-        let mut oflag = OFlag::empty();
-        oflag.insert(OFlag::O_CLOEXEC);
-        oflag.insert(OFlag::O_NONBLOCK);
-        fcntl(master, FcntlArg::F_SETFL(oflag)).map_err(to_io_error)?;
+        close_on_exec(master)?;
 
         // set master into raw mode.
         let mut termios = tcgetattr(master).map_err(to_io_error)?;
@@ -49,14 +82,41 @@ impl Pty {
         set_cooked(&mut termios);
         tcsetattr(slave, SetArg::TCSANOW, &termios).map_err(to_io_error)?;
 
-        Ok(Pty {
-            master,
-            slave,
-            stdin: true,
-            stdout: true,
-            stderr: true,
-        })
+        Ok(Pty { master, slave, slave_dups: Vec::new() })
     }
+
+    pub fn setup_slave_stdio(&mut self, cmd: &mut crate::Command) -> io::Result<()> {
+        if cmd.pty_cfg.stdin {
+            cmd.std.stdin(self.slave_stdio()?);
+        }
+        if cmd.pty_cfg.stdout {
+            cmd.std.stdout(self.slave_stdio()?);
+        }
+        if cmd.pty_cfg.stderr {
+            cmd.std.stderr(self.slave_stdio()?);
+        }
+        Ok(())
+    }
+
+    fn slave_stdio(&mut self) -> io::Result<Stdio> {
+        let fd = dup(self.slave).map_err(to_io_error)?;
+        self.slave_dups.push(fd);
+        Ok(unsafe { Stdio::from_raw_fd(fd) })
+    }
+
+    pub fn master_stdio(&mut self) -> io::Result<MasterFd> {
+        let fd = dup(self.slave).map_err(to_io_error)?;
+        close_on_exec(fd)?;
+        Ok(MasterFd(fd))
+    }
+}
+
+fn close_on_exec(fd: RawFd) -> io::Result<()> {
+    let mut oflag = OFlag::empty();
+    oflag.insert(OFlag::O_CLOEXEC);
+    oflag.insert(OFlag::O_NONBLOCK);
+    fcntl(fd, FcntlArg::F_SETFL(oflag)).map_err(to_io_error)?;
+    Ok(())
 }
 
 // Nix error to std::io::Error.
