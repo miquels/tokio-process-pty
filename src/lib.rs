@@ -847,7 +847,7 @@ impl Child {
     /// new pipes between parent and child. Use `stdout(Stdio::piped())` or
     /// `stderr(Stdio::piped())`, respectively, when creating a `Command`.
     pub async fn wait_with_output(mut self) -> io::Result<Output> {
-        use futures::future::try_join3;
+        use futures_util::future::try_join3;
         use tokio::io::AsyncReadExt;
 
         async fn read_to_end<A: AsyncRead + Unpin>(io: Option<A>) -> io::Result<Vec<u8>> {
@@ -1000,7 +1000,7 @@ mod test {
     use super::kill::Kill;
     use super::ChildDropGuard;
 
-    use futures::future::FutureExt;
+    use futures_util::future::FutureExt;
     use std::future::Future;
     use std::io;
     use std::pin::Pin;
@@ -1098,7 +1098,7 @@ mod test {
         let mut mock_reaped = Mock::with_result(Poll::Ready(Ok(())));
         let mut mock_err = Mock::with_result(Poll::Ready(Err(())));
 
-        let waker = futures::task::noop_waker();
+        let waker = futures_util::task::noop_waker();
         let mut context = Context::from_waker(&waker);
         {
             let mut guard = ChildDropGuard {

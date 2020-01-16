@@ -147,7 +147,7 @@ where
 mod test {
     use super::*;
 
-    use futures::future::FutureExt;
+    use futures_util::future::FutureExt;
     use std::cell::{Cell, RefCell};
     use std::os::unix::process::ExitStatusExt;
     use std::process::ExitStatus;
@@ -255,7 +255,7 @@ mod test {
             MockStream::new(vec![None, Some(()), None, None, None]),
         );
 
-        let waker = futures::task::noop_waker();
+        let waker = futures_util::task::noop_waker();
         let mut context = Context::from_waker(&waker);
 
         // Not yet exited, interest registered
