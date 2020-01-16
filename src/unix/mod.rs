@@ -39,9 +39,10 @@ use mio::event::Evented;
 use mio::unix::{EventedFd, UnixReady};
 use mio::{Poll as MioPoll, PollOpt, Ready, Token};
 use std::fmt;
+use std::fs;
 use std::future::Future;
 use std::io;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::pin::Pin;
 use std::process::ExitStatus;
 use std::task::Context;
@@ -137,23 +138,17 @@ impl Future for Child {
 }
 
 #[derive(Debug)]
-pub(crate) struct Fd<T> {
-    inner: T,
+pub(crate) struct Fd {
+    inner: fs::File,
 }
 
-impl<T> io::Read for Fd<T>
-where
-    T: io::Read,
-{
+impl io::Read for Fd {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         self.inner.read(bytes)
     }
 }
 
-impl<T> io::Write for Fd<T>
-where
-    T: io::Write,
-{
+impl io::Write for Fd {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.inner.write(bytes)
     }
@@ -163,19 +158,13 @@ where
     }
 }
 
-impl<T> AsRawFd for Fd<T>
-where
-    T: AsRawFd,
-{
+impl AsRawFd for Fd {
     fn as_raw_fd(&self) -> RawFd {
         self.inner.as_raw_fd()
     }
 }
 
-impl<T> Evented for Fd<T>
-where
-    T: AsRawFd,
-{
+impl Evented for Fd {
     fn register(
         &self,
         poll: &MioPoll,
@@ -201,11 +190,11 @@ where
     }
 }
 
-pub(crate) type ChildStdin = PollEvented<Fd<std::process::ChildStdin>>;
-pub(crate) type ChildStdout = PollEvented<Fd<std::process::ChildStdout>>;
-pub(crate) type ChildStderr = PollEvented<Fd<std::process::ChildStderr>>;
+pub(crate) type ChildStdin = PollEvented<Fd>;
+pub(crate) type ChildStdout = PollEvented<Fd>;
+pub(crate) type ChildStderr = PollEvented<Fd>;
 
-fn stdio<T>(option: Option<T>) -> io::Result<Option<PollEvented<Fd<T>>>>
+fn stdio<T>(option: Option<T>) -> io::Result<Option<PollEvented<Fd>>>
 where
     T: AsRawFd,
 {
@@ -215,7 +204,7 @@ where
     };
 
     // Set the fd to nonblocking before we pass it to the event loop
-    unsafe {
+    let file = unsafe {
         let fd = io.as_raw_fd();
         let r = libc::fcntl(fd, libc::F_GETFL);
         if r == -1 {
@@ -225,6 +214,7 @@ where
         if r == -1 {
             return Err(io::Error::last_os_error());
         }
-    }
-    Ok(Some(PollEvented::new(Fd { inner: io })?))
+        fs::File::from_raw_fd(fd)
+    };
+    Ok(Some(PollEvented::new(Fd { inner: file })?))
 }
