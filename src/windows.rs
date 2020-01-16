@@ -192,7 +192,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct PtyCfg {
-    stdin:  bool,
+    stdin: bool,
     stdout: bool,
     stderr: bool,
 }
@@ -206,4 +206,3 @@ impl PtyCfg {
         }
     }
 }
-

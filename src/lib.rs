@@ -443,19 +443,12 @@ impl Command {
         self
     }
 
-    /// Create a pseudo-terminal for the child.
+    /// Create a pseudo-terminal device (pty) for the new process.
     ///
-    /// On `spawn()`, a pseudo-terminal is created, and the childs
-    /// stdin/stdout/stderr handles are connected to the slave side
+    /// On `spawn()`, a pty master/slave device set is created, and the
+    /// process' stdin/stdout/stderr handles are connected to the slave side
     /// of the pty. The stdin/stdout/stderr methods of the returned
     /// `Child` struct all refer to the master side of the pty.
-    ///
-    /// If `new_session` is set, the child will be spawned in a new
-    /// session, and the pty will become the controlling terminal
-    /// of that session.
-    ///
-    /// The values `rows` and `cols` set the terminal size of the
-    /// pty. If one of them is zero, the size will not be set.
     ///
     /// When this is called, all earlier configurations of
     /// `stdin`, `stdout` and `stderr` are removed.
@@ -473,22 +466,62 @@ impl Command {
     /// use std::process::{Stdio};
     ///
     /// let command = Command::new("ls")
-    ///         .pty(false, 0, 0)
+    ///         .pty()
     ///         .stderr(Stdio::null());
     /// ```
     #[cfg(unix)]
-    pub fn pty(&mut self, new_session: bool, rows: u16, cols: u16) -> &mut Command {
-        self.pty_cfg = imp::PtyCfg {
-            new_session,
-            rows,
-            cols,
-            stdin: true,
-            stdout: true,
-            stderr: true,
-        };
+    pub fn pty(&mut self) -> &mut Command {
+        self.pty_cfg.stdin = true;
+        self.pty_cfg.stdout = true;
+        self.pty_cfg.stderr = true;
         self
     }
 
+    /// Set the initial size (rows/columns) of the pty slave device.
+    ///
+    /// This is the size that is reported by the `TIOCGWINSZ` ioctl
+    /// on the pty slave device.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```no_run
+    /// use tokio_process_pty::Command;;
+    ///
+    /// let command = Command::new("/bin/sh")
+    ///         .pty()
+    ///         .new_session()
+    ///         .pty_size(24, 80);
+    /// ```
+    #[cfg(unix)]
+    pub fn pty_size(&mut self, rows: u16, cols: u16) -> &mut Command {
+        self.pty_cfg.rows = rows;
+        self.pty_cfg.cols = cols;
+        self
+    }
+
+    /// Put the new process in its own process group and session as session leader.
+    ///
+    /// If a pty is used, it will become the controlling tty of the new session.
+    /// Signals sent to the parents' group or session do not reach the new process.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```no_run
+    /// use tokio_process_pty::Command;;
+    ///
+    /// let command = Command::new("/bin/sh")
+    ///         .pty()
+    ///         .new_session()
+    /// ```
+    #[cfg(unix)]
+    pub fn new_session(&mut self) -> &mut Command {
+        self.pty_cfg.new_session = true;
+        self
+    }
 
     /// Controls whether a `kill` operation should be invoked on a spawned child
     /// process when its corresponding `Child` handle is dropped.

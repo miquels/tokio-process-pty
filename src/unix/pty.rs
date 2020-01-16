@@ -1,22 +1,22 @@
 use std::default::Default;
 use std::io;
-use std::os::unix::io::{RawFd, AsRawFd, FromRawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::process::Stdio;
 
 use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use nix::pty::{openpty, OpenptyResult, Winsize};
-use nix::sys::termios::{tcgetattr, tcsetattr, cfmakeraw};
 use nix::sys::termios::SpecialCharacterIndices::*;
-use nix::sys::termios::{ControlFlags, InputFlags, OutputFlags, LocalFlags, SetArg};
 use nix::sys::termios::Termios;
-use nix::unistd::{dup, close};
+use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr};
+use nix::sys::termios::{ControlFlags, InputFlags, LocalFlags, OutputFlags, SetArg};
+use nix::unistd::{close, dup, setsid};
 
 #[derive(Debug, Default)]
 pub(crate) struct PtyCfg {
     pub new_session: bool,
     pub rows: u16,
     pub cols: u16,
-    pub stdin:  bool,
+    pub stdin: bool,
     pub stdout: bool,
     pub stderr: bool,
 }
@@ -58,15 +58,20 @@ impl Drop for Pty {
 
 impl Pty {
     // Open a pseudo tty master/slave pair. set slave to defaults, and master to non-blocking.
-    pub(crate) fn open(this: &mut crate::Command) -> io::Result<Pty> {
-
+    pub fn open(this: &mut crate::Command) -> io::Result<Pty> {
         // open a pty master/slave set
         let winsize = if this.pty_cfg.rows > 0 && this.pty_cfg.cols > 0 {
-            Some(Winsize{ ws_row: this.pty_cfg.rows, ws_col: this.pty_cfg.cols, ws_xpixel: 0, ws_ypixel: 0 })
+            Some(Winsize {
+                ws_row: this.pty_cfg.rows,
+                ws_col: this.pty_cfg.cols,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            })
         } else {
             None
         };
-        let OpenptyResult{ master, slave } = openpty(winsize.as_ref(), None).map_err(to_io_error)?;
+        let OpenptyResult { master, slave } =
+            openpty(winsize.as_ref(), None).map_err(to_io_error)?;
 
         // set master to non-blocking.
         close_on_exec(master)?;
@@ -82,7 +87,11 @@ impl Pty {
         set_cooked(&mut termios);
         tcsetattr(slave, SetArg::TCSANOW, &termios).map_err(to_io_error)?;
 
-        Ok(Pty { master, slave, slave_dups: Vec::new() })
+        Ok(Pty {
+            master,
+            slave,
+            slave_dups: Vec::new(),
+        })
     }
 
     pub fn setup_slave_stdio(&mut self, cmd: &mut crate::Command) -> io::Result<()> {
@@ -109,6 +118,20 @@ impl Pty {
         close_on_exec(fd)?;
         Ok(MasterFd(fd))
     }
+
+    pub unsafe fn new_session() -> io::Result<()> {
+        setsid().map_err(to_io_error)?;
+        Ok(())
+    }
+
+    pub unsafe fn set_controlling_tty(fd: RawFd) -> io::Result<()> {
+        let r = libc::ioctl(fd as libc::c_int, libc::TIOCSCTTY, 0);
+        if r != 0 {
+            Err(std::io::Error::from_raw_os_error(r))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 fn close_on_exec(fd: RawFd) -> io::Result<()> {
@@ -122,16 +145,17 @@ fn close_on_exec(fd: RawFd) -> io::Result<()> {
 // Nix error to std::io::Error.
 fn to_io_error(n: nix::Error) -> io::Error {
     match n {
-        nix::Error::Sys(errno) =>io::Error::from_raw_os_error(errno as i32),
-        nix::Error::InvalidPath =>io::Error::new(io::ErrorKind::InvalidInput, "invalid path"),
+        nix::Error::Sys(errno) => io::Error::from_raw_os_error(errno as i32),
+        nix::Error::InvalidPath => io::Error::new(io::ErrorKind::InvalidInput, "invalid path"),
         nix::Error::InvalidUtf8 => io::Error::new(io::ErrorKind::InvalidData, "invalid utf8"),
-        nix::Error::UnsupportedOperation => io::Error::new(io::ErrorKind::Other, "unsupported operation"),
+        nix::Error::UnsupportedOperation => {
+            io::Error::new(io::ErrorKind::Other, "unsupported operation")
+        }
     }
 }
 
 // Change termios to cooked mode.
 fn set_cooked(termios: &mut Termios) {
-
     // default control chars, mostly.
     termios.control_chars[VINTR as usize] = 0o003;
     termios.control_chars[VQUIT as usize] = 0o034;
@@ -182,4 +206,3 @@ fn set_cooked(termios: &mut Termios) {
     lflags.insert(LocalFlags::ECHOKE);
     termios.local_flags = lflags;
 }
-

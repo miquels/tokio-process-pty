@@ -101,6 +101,7 @@ impl fmt::Debug for Child {
 }
 
 pub(crate) fn spawn_child(cmd: &mut crate::Command) -> io::Result<SpawnedChild> {
+    // initialize pty.
     let pty = if cmd.pty_cfg.enabled() {
         let mut pty = Pty::open(cmd)?;
         pty.setup_slave_stdio(cmd)?;
@@ -108,6 +109,22 @@ pub(crate) fn spawn_child(cmd: &mut crate::Command) -> io::Result<SpawnedChild> 
     } else {
         None
     };
+
+    // create new session after fork(), before exec().
+    if cmd.pty_cfg.new_session {
+        // call setsid()
+        unsafe {
+            cmd.pre_exec(|| Pty::new_session());
+        }
+
+        // call ioctl(fd, TIOCSCTTY)
+        if let Some(ref pty) = pty {
+            let fd = pty.slave;
+            unsafe {
+                cmd.pre_exec(move || Pty::set_controlling_tty(fd));
+            }
+        }
+    }
 
     let mut child = cmd.std.spawn()?;
     let mut stdin = stdio(child.stdin.take())?;
