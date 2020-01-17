@@ -3,7 +3,7 @@ use std::io;
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::process::Stdio;
 
-use nix::fcntl::{fcntl, FcntlArg, OFlag};
+use nix::fcntl::{fcntl, FcntlArg, FdFlag};
 use nix::pty::{openpty, OpenptyResult, Winsize};
 use nix::sys::termios::SpecialCharacterIndices::*;
 use nix::sys::termios::Termios;
@@ -48,9 +48,11 @@ pub(crate) struct Pty {
 
 impl Drop for Pty {
     fn drop(&mut self) {
+        debug!("Pty: Drop");
         let _ = close(self.master);
         let _ = close(self.slave);
         for fd in self.slave_dups.drain(..) {
+            debug!("pty drop: closing slave {}", fd);
             let _ = close(fd);
         }
     }
@@ -73,8 +75,9 @@ impl Pty {
         let OpenptyResult { master, slave } =
             openpty(winsize.as_ref(), None).map_err(to_io_error)?;
 
-        // set master to non-blocking.
+        // make sure filedescriptors are closed on exec.
         close_on_exec(master)?;
+        close_on_exec(slave)?;
 
         // set master into raw mode.
         let mut termios = tcgetattr(master).map_err(to_io_error)?;
@@ -109,12 +112,14 @@ impl Pty {
 
     fn slave_stdio(&mut self) -> io::Result<Stdio> {
         let fd = dup(self.slave).map_err(to_io_error)?;
+        // before executing, the fd will be dup()ed again, so CLOEXEC this instantiation.
+        close_on_exec(fd)?;
         self.slave_dups.push(fd);
         Ok(unsafe { Stdio::from_raw_fd(fd) })
     }
 
     pub fn master_stdio(&mut self) -> io::Result<MasterFd> {
-        let fd = dup(self.slave).map_err(to_io_error)?;
+        let fd = dup(self.master).map_err(to_io_error)?;
         close_on_exec(fd)?;
         Ok(MasterFd(fd))
     }
@@ -135,10 +140,7 @@ impl Pty {
 }
 
 fn close_on_exec(fd: RawFd) -> io::Result<()> {
-    let mut oflag = OFlag::empty();
-    oflag.insert(OFlag::O_CLOEXEC);
-    oflag.insert(OFlag::O_NONBLOCK);
-    fcntl(fd, FcntlArg::F_SETFL(oflag)).map_err(to_io_error)?;
+    fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(to_io_error)?;
     Ok(())
 }
 

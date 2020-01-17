@@ -102,6 +102,7 @@ impl fmt::Debug for Child {
 
 pub(crate) fn spawn_child(cmd: &mut crate::Command) -> io::Result<SpawnedChild> {
     // initialize pty.
+    debug!("spawn_child: PtyCfg: {:?}", cmd.pty_cfg);
     let pty = if cmd.pty_cfg.enabled() {
         let mut pty = Pty::open(cmd)?;
         pty.setup_slave_stdio(cmd)?;
@@ -109,16 +110,19 @@ pub(crate) fn spawn_child(cmd: &mut crate::Command) -> io::Result<SpawnedChild> 
     } else {
         None
     };
+    debug!("spawn_child: Pty: {:?}", pty);
 
     // create new session after fork(), before exec().
     if cmd.pty_cfg.new_session {
         // call setsid()
         unsafe {
+            debug!("calling setsid");
             cmd.pre_exec(|| Pty::new_session());
         }
 
         // call ioctl(fd, TIOCSCTTY)
         if let Some(ref pty) = pty {
+            debug!("calling set_ctty");
             let fd = pty.slave;
             unsafe {
                 cmd.pre_exec(move || Pty::set_controlling_tty(fd));
@@ -134,12 +138,15 @@ pub(crate) fn spawn_child(cmd: &mut crate::Command) -> io::Result<SpawnedChild> 
     // Connect stdin / stdout / stderr to the pty master.
     if let Some(mut pty) = pty {
         if cmd.pty_cfg.stdin {
+            debug!("overriding stdin");
             stdin = stdio(Some(pty.master_stdio()?))?;
         }
         if cmd.pty_cfg.stdout {
+            debug!("overriding stdout");
             stdout = stdio(Some(pty.master_stdio()?))?;
         }
         if cmd.pty_cfg.stderr {
+            debug!("overriding stderr");
             stderr = stdio(Some(pty.master_stdio()?))?;
         }
     }

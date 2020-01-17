@@ -11,4 +11,9 @@ lazy_static = "1.4.0"
 libc = "0.2.66"
 futures-util = "0.3.1"
 nix = "0.16.1"
+log = "0.4"
 
+[dev-dependencies]
+tokio = { version = "0.2.9", features = [ "full" ] }
+env_logger = "0.7"
+termion = "1.5"

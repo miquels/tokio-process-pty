@@ -107,7 +107,7 @@
 //! has exited.
 //!
 //! [`Command`]: crate::Command
-
+#[macro_use] extern crate log;
 pub(crate) use crate as process;
 
 #[path = "unix/mod.rs"]
