@@ -4,7 +4,7 @@
 //! unix script(1) utility.
 //!
 //! It spawns a shell, using a pseudo-terminal, relays all the i/o
-//! between the pty and the local tty, and also log all output
+//! between the pty and the local tty, and also logs all output
 //! of the shell and any commands it runs to a file.
 //!
 use std::io;
