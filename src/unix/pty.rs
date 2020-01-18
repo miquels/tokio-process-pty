@@ -43,7 +43,6 @@ impl AsRawFd for MasterFd {
 pub(crate) struct Pty {
     pub master: RawFd,
     pub slave: RawFd,
-    pub slave_dups: Vec<RawFd>,
 }
 
 impl Drop for Pty {
@@ -51,10 +50,6 @@ impl Drop for Pty {
         debug!("Pty: Drop");
         let _ = close(self.master);
         let _ = close(self.slave);
-        for fd in self.slave_dups.drain(..) {
-            debug!("pty drop: closing slave {}", fd);
-            let _ = close(fd);
-        }
     }
 }
 
@@ -93,7 +88,6 @@ impl Pty {
         Ok(Pty {
             master,
             slave,
-            slave_dups: Vec::new(),
         })
     }
 
@@ -110,11 +104,10 @@ impl Pty {
         Ok(())
     }
 
-    fn slave_stdio(&mut self) -> io::Result<Stdio> {
+    fn slave_stdio(&self) -> io::Result<Stdio> {
         let fd = dup(self.slave).map_err(to_io_error)?;
         // before executing, the fd will be dup()ed again, so CLOEXEC this instantiation.
         close_on_exec(fd)?;
-        self.slave_dups.push(fd);
         Ok(unsafe { Stdio::from_raw_fd(fd) })
     }
 
