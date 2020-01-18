@@ -1,6 +1,13 @@
 [package]
 name = "tokio-process-pty"
-version = "0.1.0"
+
+# When releasing to crates.io:
+# - Update html_root_url in src/lib.rs
+# - Update CHANGELOG.md (if applicable)
+# - Run ./generate-readme (if applicable)
+# - Create git tag v0.x.y
+version = "0.2.0"
+
 authors = ["Miquel van Smoorenburg <mikevs@xs4all.net>"]
 edition = "2018"
 
@@ -11,9 +18,7 @@ lazy_static = "1.4.0"
 libc = "0.2.66"
 futures-util = "0.3.1"
 nix = "0.16.1"
-log = "0.4"
 
 [dev-dependencies]
 tokio = { version = "0.2.9", features = [ "full" ] }
-env_logger = "0.7"
 termion = "1.5"

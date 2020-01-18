@@ -107,8 +107,6 @@
 //! has exited.
 //!
 //! [`Command`]: crate::Command
-#[macro_use] extern crate log;
-pub(crate) use crate as process;
 
 #[path = "unix/mod.rs"]
 #[cfg(unix)]
@@ -515,7 +513,7 @@ impl Command {
     ///
     /// let command = Command::new("/bin/sh")
     ///         .pty()
-    ///         .new_session()
+    ///         .new_session();
     /// ```
     #[cfg(unix)]
     pub fn new_session(&mut self) -> &mut Command {

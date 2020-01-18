@@ -47,7 +47,6 @@ pub(crate) struct Pty {
 
 impl Drop for Pty {
     fn drop(&mut self) {
-        debug!("Pty: Drop");
         let _ = close(self.master);
         let _ = close(self.slave);
     }

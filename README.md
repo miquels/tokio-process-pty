@@ -5,7 +5,7 @@ Based on `tokio::process` from tokio 0.2.9.
 
 ## Description.
 
-This crate is a copy of [`tokio::process`](https://docs.rs/tokio/0.2.9/tokio/process),
+This crate is a fork of [`tokio::process`](https://docs.rs/tokio/0.2.9/tokio/process),
 that adds some new functionality to tokio's
 [`tokio::process:Command`](https://docs.rs/tokio/0.2.9/tokio/process/struct.Command.html) struct:
 
