@@ -136,8 +136,8 @@ use std::task::Poll;
 
 /// This structure mimics the API of [`std::process::Command`] found in the standard library, but
 /// replaces functions that create a process with an asynchronous variant. The main provided
-/// asynchronous functions are [spawn](Command::spawn), [status](Command::status), and
-/// [output](Command::output).
+/// asynchronous functions are [spawn](struct.Command.html#method.spawn),
+/// [status](struct.Command.html#method.status), and [output](struct.Command.html#method.output).
 ///
 /// `Command` uses asynchronous versions of some `std` types (for example [`Child`]).
 #[derive(Debug)]
